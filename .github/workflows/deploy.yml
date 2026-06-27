@@ -1,0 +1,66 @@
+# Deploy — Transaction Intelligence Lakehouse DAB (Phase 7)
+#
+# Deploys the Databricks Asset Bundle (databricks.yml + resources/) to the `prod`
+# target on every push to main.
+#
+# !!! DATABRICKS FREE EDITION CAVEAT !!!
+# Free Edition CLI / bundle auth uses a personal access token (PAT). This requires a
+# ONE-TIME MANUAL SETUP before this workflow can deploy:
+#   1. In the Databricks workspace UI, create a PAT (Settings -> Developer -> Access tokens).
+#   2. Add repo secrets:
+#        DATABRICKS_HOST          (https://<workspace>.cloud.databricks.com)
+#        DATABRICKS_TOKEN         (the dapi... PAT)
+#        DATABRICKS_WAREHOUSE_ID  (id of the serverless SQL warehouse used by dbt tasks)
+#   3. After the secrets are added, set repo variable ENABLE_DEPLOY=true to enable
+#      deploys. Until then the job is gated off so main stays green without credentials.
+#
+# The job `if:` cannot read secrets OR env, so we gate on the repo VARIABLE
+# vars.ENABLE_DEPLOY (which IS allowed in a job-level `if`).
+#
+# Secrets used (NEVER hardcoded):
+#   DATABRICKS_HOST, DATABRICKS_TOKEN, DATABRICKS_WAREHOUSE_ID
+
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Validate & deploy bundle (prod)
+    runs-on: ubuntu-latest
+    # Gated on a repo variable (allowed in job `if`, unlike secrets/env). Set
+    # ENABLE_DEPLOY=true once the DATABRICKS_* secrets above are configured.
+    if: ${{ vars.ENABLE_DEPLOY == 'true' }}
+
+    env:
+      DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+      DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+      # Bundle variables (databricks.yml / resources/transaction_pipeline.job.yml)
+      # are supplied via BUNDLE_VAR_<name> so validate/deploy can resolve them.
+      BUNDLE_VAR_host: ${{ secrets.DATABRICKS_HOST }}
+      BUNDLE_VAR_warehouse_id: ${{ secrets.DATABRICKS_WAREHOUSE_ID }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Databricks CLI
+        uses: databricks/setup-cli@main
+
+      - name: Databricks CLI version
+        run: databricks --version
+
+      - name: Validate bundle (prod)
+        run: databricks bundle validate -t prod
+
+      - name: Deploy bundle (prod)
+        run: databricks bundle deploy -t prod

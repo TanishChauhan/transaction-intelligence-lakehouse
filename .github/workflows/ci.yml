@@ -1,0 +1,104 @@
+# CI — Transaction Intelligence Lakehouse (Phase 7)
+#
+# Runs on every pull request to main and on every push to main (so direct main
+# pushes aren't skipped). Concurrency cancels superseded runs on the same ref.
+#
+# What ALWAYS runs (no creds needed, safe on forks/local):
+#   - black --check (generator/ ingestion/ tests/)
+#   - pytest (generator tests run; ingestion tests self-skip when pyspark is absent)
+#   - dbt parse (fully offline — never connects to a warehouse)
+#
+# What runs ONLY when real secrets are present (guarded on env.DATABRICKS_TOKEN):
+#   - dbt build against a live, isolated dev target
+#
+# Secrets used (configured in repo/org settings, NEVER hardcoded here):
+#   DATABRICKS_HOST, DATABRICKS_HTTP_PATH, DATABRICKS_TOKEN
+#
+# Note on speed: we intentionally do NOT install the .[spark] extra in CI to keep
+# the run fast. The pyspark-guarded ingestion tests therefore skip — that is expected.
+# To exercise them, add `pip install -e ".[spark]"` before the pytest step.
+
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: Lint, test & offline dbt parse
+    runs-on: ubuntu-latest
+
+    # Job-level env so the integration step can guard on env.DATABRICKS_TOKEN
+    # (the `secrets` context is NOT allowed in `if:`, but `env` is at step level).
+    env:
+      DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,dbt]"
+
+      - name: black --check
+        run: black --check generator/ ingestion/ tests/
+
+      - name: pytest
+        # Generator tests run pure-python; ingestion tests skip without pyspark.
+        run: pytest
+
+      - name: dbt parse (offline)
+        # Parse is fully offline and never connects to a warehouse. profiles.yml uses
+        # env_var() for host/http_path/token, so we feed dummy values purely to satisfy
+        # template rendering. We generate profiles.yml from the committed example and
+        # point dbt at the working dir via --profiles-dir . (working-directory: dbt).
+        working-directory: dbt
+        env:
+          DATABRICKS_HOST: dummy-host.cloud.databricks.com
+          DATABRICKS_HTTP_PATH: /sql/1.0/warehouses/dummy
+          DATABRICKS_TOKEN: dummy-token
+        run: |
+          cp profiles.yml.example profiles.yml
+          dbt deps
+          dbt parse --profiles-dir .
+
+      - name: dbt build (integration, isolated)
+        # Only runs when real secrets exist (forks/local PRs skip this cleanly).
+        # Step-level `if` CAN read `env`, which is fed from secrets at job level.
+        #
+        # PR ISOLATION: each PR builds into its own schema so concurrent CI runs never
+        # clobber shared state. We derive a per-run schema suffix from the PR number
+        # (falling back to the run id) and override TIL_SILVER_SCHEMA. Catalog can be
+        # pinned to a dedicated CI catalog via the optional TIL_CATALOG repo secret;
+        # otherwise it defaults to txn_intelligence.
+        if: env.DATABRICKS_TOKEN != ''
+        working-directory: dbt
+        env:
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          DATABRICKS_HTTP_PATH: ${{ secrets.DATABRICKS_HTTP_PATH }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+          TIL_CATALOG: ${{ secrets.TIL_CATALOG || 'txn_intelligence' }}
+          TIL_SILVER_SCHEMA: ci_pr_${{ github.event.pull_request.number || github.run_id }}
+        run: |
+          cp profiles.yml.example profiles.yml
+          dbt deps
+          dbt build --profiles-dir . --target dev
