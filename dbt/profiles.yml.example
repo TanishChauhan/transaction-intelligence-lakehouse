@@ -1,0 +1,21 @@
+# Copy to ~/.dbt/profiles.yml (or set DBT_PROFILES_DIR) and supply values via env vars.
+# NEVER commit a profiles.yml containing a real token (the repo .gitignore blocks it).
+#
+# Required env vars:
+#   DATABRICKS_HOST       e.g. dbc-xxxx.cloud.databricks.com   (no https://)
+#   DATABRICKS_HTTP_PATH  e.g. /sql/1.0/warehouses/<warehouse-id>   (Free Edition serverless SQL warehouse)
+#   DATABRICKS_TOKEN      personal access token (dapi...)
+# Optional:
+#   TIL_CATALOG (default txn_intelligence), TIL_SILVER_SCHEMA (default silver)
+
+transaction_intelligence:
+  target: dev
+  outputs:
+    dev:
+      type: databricks
+      catalog: "{{ env_var('TIL_CATALOG', 'txn_intelligence') }}"
+      schema: "{{ env_var('TIL_SILVER_SCHEMA', 'silver') }}"
+      host: "{{ env_var('DATABRICKS_HOST') }}"
+      http_path: "{{ env_var('DATABRICKS_HTTP_PATH') }}"
+      token: "{{ env_var('DATABRICKS_TOKEN') }}"
+      threads: 4

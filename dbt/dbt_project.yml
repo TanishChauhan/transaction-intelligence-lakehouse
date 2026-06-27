@@ -1,0 +1,33 @@
+name: "transaction_intelligence"
+version: "1.0.0"
+config-version: 2
+
+# Connection profile (see profiles.yml.example). No secrets live in this repo.
+profile: "transaction_intelligence"
+
+model-paths: ["models"]
+test-paths: ["tests"]
+macro-paths: ["macros"]
+seed-paths: ["seeds"]
+snapshot-paths: ["snapshots"]
+analysis-paths: ["analyses"]
+
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+# Catalog is shared by sources (bronze) and is overridable via env.
+vars:
+  catalog: "{{ env_var('TIL_CATALOG', 'txn_intelligence') }}"
+
+models:
+  transaction_intelligence:
+    +persist_docs:
+      relation: true
+      columns: true
+    silver:
+      +schema: silver
+      +materialized: table
+    gold:
+      +schema: gold
+      +materialized: table

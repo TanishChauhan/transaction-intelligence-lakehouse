@@ -1,0 +1,90 @@
+version: 2
+
+sources:
+  - name: bronze
+    description: "Raw ingested data (Auto Loader + reference loader) in the bronze schema."
+    database: "{{ var('catalog') }}"
+    schema: bronze
+    tables:
+      - name: transactions_raw
+        description: "Append-only raw card-transaction events from Auto Loader."
+      - name: transactions_quarantine
+        description: "Malformed / schema-mismatched records routed aside during ingestion."
+      - name: customers_raw
+        description: "Raw customer reference dimension loaded from the landing volume."
+      - name: merchants_raw
+        description: "Raw merchant reference dimension loaded from the landing volume."
+
+models:
+  - name: stg_transactions
+    description: "Type-cast, conformed, deduplicated transactions (one row per transaction_id)."
+    columns:
+      - name: transaction_id
+        description: "Unique transaction identifier."
+        tests:
+          - not_null
+          - unique
+      - name: customer_id
+        tests:
+          - not_null
+      - name: amount
+        tests:
+          - not_null
+      - name: channel
+        tests:
+          - accepted_values:
+              arguments:
+                values: ["POS", "ECOMMERCE", "ATM"]
+      - name: merchant_category
+        tests:
+          - accepted_values:
+              arguments:
+                values:
+                  ["grocery", "fuel", "electronics", "travel", "gambling",
+                   "crypto", "atm", "online_marketplace"]
+
+  - name: stg_customers
+    description: "Conformed customer dimension (spend baseline + home geo)."
+    columns:
+      - name: customer_id
+        tests:
+          - not_null
+          - unique
+
+  - name: stg_merchants
+    description: "Conformed merchant dimension (category, geo, risk tier)."
+    columns:
+      - name: merchant_id
+        tests:
+          - not_null
+          - unique
+      - name: risk_tier
+        tests:
+          - accepted_values:
+              arguments:
+                values: ["low", "medium", "high"]
+
+  - name: silver_transactions
+    description: "Analytics-ready transactions enriched with customer + merchant attributes."
+    columns:
+      - name: transaction_id
+        tests:
+          - not_null
+          - unique
+      - name: customer_id
+        tests:
+          - relationships:
+              arguments:
+                to: ref('stg_customers')
+                field: customer_id
+      - name: merchant_id
+        tests:
+          - relationships:
+              arguments:
+                to: ref('stg_merchants')
+                field: merchant_id
+      - name: merchant_risk_tier
+        tests:
+          - accepted_values:
+              arguments:
+                values: ["low", "medium", "high"]
