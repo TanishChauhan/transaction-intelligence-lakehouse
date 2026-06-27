@@ -1,0 +1,44 @@
+# Databricks Asset Bundle (DAB) — Transaction Intelligence Lakehouse
+#
+# Phase 6 orchestration root. Deploys a single Databricks Workflows job that chains the
+# medallion pipeline (generate -> load reference -> bronze ingest -> dbt build -> quality
+# gate) on **serverless compute only** (Databricks Free Edition constraint).
+#
+# Auth: NO tokens live in this repo. Deploy authenticates via environment variables
+# (DATABRICKS_HOST + DATABRICKS_TOKEN) or a configured CLI profile, e.g.:
+#
+#     export DATABRICKS_HOST=https://<workspace>.cloud.databricks.com
+#     export DATABRICKS_TOKEN=<pat>          # never commit this
+#     databricks bundle deploy -t dev
+#     databricks bundle run transaction_pipeline -t dev
+#
+# The deployed job's schedule is PAUSED by default to respect Free Edition quotas.
+
+bundle:
+  name: transaction-intelligence-lakehouse
+
+variables:
+  catalog_name:
+    description: Unity Catalog catalog holding the bronze/silver/gold schemas.
+    default: txn_intelligence
+  warehouse_id:
+    description: >-
+      Id of the existing Free Edition serverless SQL warehouse used by the dbt tasks.
+      No default — supply per target via --var, env, or a target override.
+  host:
+    description: Workspace URL (https://...). Provided per target / via DATABRICKS_HOST.
+
+include:
+  - resources/*.yml
+
+targets:
+  dev:
+    mode: development
+    default: true
+    workspace:
+      host: ${var.host}
+
+  prod:
+    mode: production
+    workspace:
+      host: ${var.host}

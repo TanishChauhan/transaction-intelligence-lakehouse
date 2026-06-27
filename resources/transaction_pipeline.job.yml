@@ -1,0 +1,82 @@
+# Transaction Intelligence pipeline job (Databricks Asset Bundle resource).
+#
+# Free Edition constraints honoured:
+#   * SERVERLESS compute only — no job_clusters, no instance/autoscale specs. Python tasks
+#     run on a job-level serverless `environments` entry; dbt tasks run on the existing
+#     serverless SQL warehouse (${var.warehouse_id}).
+#   * Schedule is PAUSED by default (hourly cron) so the job never burns quota unattended;
+#     run it on demand with `databricks bundle run transaction_pipeline`, or un-pause later.
+#
+# Task chain (strictly sequential via depends_on):
+#   generate_batch -> load_reference -> bronze_ingest -> dbt_build -> quality_gate
+#
+# Runtime config note: the python modules are config-driven via env vars (TIL_TARGET,
+# TIL_CATALOG, TIL_BRONZE_SCHEMA, ...). On the workspace these should resolve to the
+# Databricks target (TIL_TARGET=databricks, TIL_CATALOG=${var.catalog_name}); set them
+# on the serverless environment / workspace defaults. The dbt project reads TIL_CATALOG
+# via env_var() with a safe default, and the dbt tasks bind to the SQL warehouse below.
+
+resources:
+  jobs:
+    transaction_pipeline:
+      name: transaction_pipeline
+
+      # Hourly, but PAUSED — respects Free Edition daily compute quotas.
+      schedule:
+        quartz_cron_expression: "0 0 * * * ?"
+        timezone_id: UTC
+        pause_status: PAUSED
+
+      # Serverless environment for the python (spark_python_task) tasks. Installs the only
+      # pure-python dependency (faker); pyspark is provided by the serverless runtime.
+      environments:
+        - environment_key: default_env
+          spec:
+            client: "1"
+            dependencies:
+              - faker
+
+      tasks:
+        # 1. Generate a synthetic batch of reference data + transaction events into the
+        #    landing Volume (python -m generator.generate_transactions).
+        - task_key: generate_batch
+          spark_python_task:
+            python_file: ../generator/generate_transactions.py
+          environment_key: default_env
+
+        # 2. Load customer/merchant reference dimensions into bronze.
+        - task_key: load_reference
+          depends_on:
+            - task_key: generate_batch
+          spark_python_task:
+            python_file: ../ingestion/load_reference.py
+          environment_key: default_env
+
+        # 3. Auto Loader micro-batch (availableNow) of landing JSON -> bronze.transactions_raw.
+        - task_key: bronze_ingest
+          depends_on:
+            - task_key: load_reference
+          spark_python_task:
+            python_file: ../ingestion/bronze_autoloader.py
+          environment_key: default_env
+
+        # 4. dbt build: silver + gold models and all dbt tests, on the serverless warehouse.
+        - task_key: dbt_build
+          depends_on:
+            - task_key: bronze_ingest
+          dbt_task:
+            project_directory: ../dbt
+            commands:
+              - dbt deps
+              - dbt build --target dev
+            warehouse_id: ${var.warehouse_id}
+
+        # 5. Final data-quality gate: re-run the critical quality tests as a hard gate.
+        - task_key: quality_gate
+          depends_on:
+            - task_key: dbt_build
+          dbt_task:
+            project_directory: ../dbt
+            commands:
+              - dbt test --select assert_fraud_recall_sane source:* silver_transactions fraud_signals
+            warehouse_id: ${var.warehouse_id}
