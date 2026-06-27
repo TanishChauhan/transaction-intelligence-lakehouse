@@ -1,0 +1,152 @@
+version: 2
+
+models:
+  - name: dim_customer
+    description: "Customer dimension: one row per customer with spend baseline and home geo."
+    columns:
+      - name: customer_id
+        description: "Primary key — unique customer identifier."
+        tests:
+          - not_null
+          - unique
+      - name: customer_name
+        description: "Customer display name."
+      - name: typical_txn_amount
+        description: "Per-customer baseline mean transaction amount."
+      - name: typical_txn_std
+        description: "Per-customer baseline standard deviation of transaction amount."
+
+  - name: dim_merchant
+    description: "Merchant dimension: one row per merchant with category, geo and risk tier."
+    columns:
+      - name: merchant_id
+        description: "Primary key — unique merchant identifier."
+        tests:
+          - not_null
+          - unique
+      - name: risk_tier
+        description: "Merchant risk tier used by the high-risk-merchant fraud signal."
+        tests:
+          - accepted_values:
+              arguments:
+                values: ["low", "medium", "high"]
+
+  - name: fct_transaction
+    description: "Transaction-grain fact (clean of is_fraud_label). Incremental on event_timestamp."
+    columns:
+      - name: transaction_id
+        description: "Primary key — unique transaction identifier."
+        tests:
+          - not_null
+          - unique
+      - name: customer_id
+        description: "Foreign key to dim_customer."
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_customer')
+                field: customer_id
+      - name: merchant_id
+        description: "Foreign key to dim_merchant."
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_merchant')
+                field: merchant_id
+      - name: channel
+        description: "Transaction channel."
+        tests:
+          - accepted_values:
+              arguments:
+                values: ["POS", "ECOMMERCE", "ATM"]
+      - name: amount
+        description: "Transaction amount."
+      - name: event_timestamp
+        description: "Event timestamp of the transaction."
+      - name: transaction_date
+        description: "Calendar date derived from event_timestamp."
+
+  - name: fraud_signals
+    description: >
+      Per-transaction rule-based fraud features and composite score. Derived purely from
+      observable features — never references is_fraud_label. Incremental on event_timestamp.
+    columns:
+      - name: transaction_id
+        description: "Primary key — unique transaction identifier."
+        tests:
+          - not_null
+          - unique
+      - name: velocity_count_5m
+        description: "Count of txns on the same card within the trailing 5 minutes."
+      - name: seconds_since_prev_txn
+        description: "Seconds elapsed since the previous txn on the same card."
+      - name: km_from_prev_txn
+        description: "Great-circle (haversine) distance in km from the previous txn on the card."
+      - name: speed_kmh
+        description: "Implied travel speed (km/h) between consecutive txns on the card."
+      - name: amount_zscore
+        description: "Amount anomaly: z-score versus the customer's spend baseline."
+      - name: is_high_risk_merchant
+        description: "True when the merchant risk tier is high."
+      - name: flag_velocity
+        description: "Velocity flag (>= 5 txns on the card in 5 minutes)."
+      - name: flag_impossible_travel
+        description: "Impossible-travel flag (> 900 km/h between consecutive txns)."
+      - name: flag_amount_anomaly
+        description: "Amount-anomaly flag (z-score >= 6)."
+      - name: flag_high_risk_merchant
+        description: "High-risk-merchant flag."
+      - name: flag_card_testing
+        description: "Card-testing flag (tiny amount with rapid velocity)."
+      - name: fraud_score
+        description: "Composite weighted score over the five flags."
+      - name: is_flagged_fraud
+        description: "True when fraud_score >= 0.25 (any meaningful signal)."
+
+  - name: customer_spend_daily
+    description: "Daily spend and transaction-count aggregates per customer."
+    columns:
+      - name: customer_id
+        description: "Customer identifier."
+        tests:
+          - not_null
+      - name: spend_date
+        description: "Calendar day of the aggregated spend."
+        tests:
+          - not_null
+      - name: txn_count
+        description: "Number of transactions for the customer on the day."
+
+  - name: merchant_risk_daily
+    description: "Daily flagged-transaction counts and rates per merchant."
+    columns:
+      - name: merchant_id
+        description: "Merchant identifier."
+        tests:
+          - not_null
+      - name: activity_date
+        description: "Calendar day of the aggregated activity."
+        tests:
+          - not_null
+      - name: flagged_rate
+        description: "Share of flagged transactions for the merchant on the day."
+
+exposures:
+  - name: fraud_dashboard
+    type: dashboard
+    maturity: high
+    description: >
+      Databricks SQL dashboard serving fraud analytics: rule-based flagged transactions,
+      per-customer spend trends and per-merchant risk rates. Built on the gold marts.
+    owner:
+      name: Data Engineering
+      email: data-engineering@example.com
+    depends_on:
+      - ref('dim_customer')
+      - ref('dim_merchant')
+      - ref('fct_transaction')
+      - ref('fraud_signals')
+      - ref('customer_spend_daily')
+      - ref('merchant_risk_daily')
