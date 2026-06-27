@@ -46,7 +46,6 @@ jobs:
       DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
       # Bundle variables (databricks.yml / resources/transaction_pipeline.job.yml)
       # are supplied via BUNDLE_VAR_<name> so validate/deploy can resolve them.
-      BUNDLE_VAR_host: ${{ secrets.DATABRICKS_HOST }}
       BUNDLE_VAR_warehouse_id: ${{ secrets.DATABRICKS_WAREHOUSE_ID }}
 
     steps:

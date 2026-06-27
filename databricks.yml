@@ -4,8 +4,11 @@
 # medallion pipeline (generate -> load reference -> bronze ingest -> dbt build -> quality
 # gate) on **serverless compute only** (Databricks Free Edition constraint).
 #
-# Auth: NO tokens live in this repo. Deploy authenticates via environment variables
-# (DATABRICKS_HOST + DATABRICKS_TOKEN) or a configured CLI profile, e.g.:
+# Auth: NO tokens live in this repo. The workspace host is provided via the
+# DATABRICKS_HOST environment variable (NOT a bundle variable) — Databricks does
+# not allow ${var.*} interpolation on auth fields like workspace.host. Deploy and
+# run authenticate via environment variables (DATABRICKS_HOST + DATABRICKS_TOKEN)
+# or a configured CLI profile, e.g.:
 #
 #     export DATABRICKS_HOST=https://<workspace>.cloud.databricks.com
 #     export DATABRICKS_TOKEN=<pat>          # never commit this
@@ -25,8 +28,6 @@ variables:
     description: >-
       Id of the existing Free Edition serverless SQL warehouse used by the dbt tasks.
       No default — supply per target via --var, env, or a target override.
-  host:
-    description: Workspace URL (https://...). Provided per target / via DATABRICKS_HOST.
 
 include:
   - resources/*.yml
@@ -35,10 +36,6 @@ targets:
   dev:
     mode: development
     default: true
-    workspace:
-      host: ${var.host}
 
   prod:
     mode: production
-    workspace:
-      host: ${var.host}

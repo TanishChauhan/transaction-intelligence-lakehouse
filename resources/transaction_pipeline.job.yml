@@ -35,6 +35,7 @@ resources:
             client: "1"
             dependencies:
               - faker
+              - dbt-databricks>=1.7,<2.0
 
       tasks:
         # 1. Generate a synthetic batch of reference data + transaction events into the
@@ -70,6 +71,7 @@ resources:
               - dbt deps
               - dbt build --target dev
             warehouse_id: ${var.warehouse_id}
+          environment_key: default_env
 
         # 5. Final data-quality gate: re-run the critical quality tests as a hard gate.
         - task_key: quality_gate
@@ -80,3 +82,4 @@ resources:
             commands:
               - dbt test --select assert_fraud_recall_sane source:* silver_transactions fraud_signals
             warehouse_id: ${var.warehouse_id}
+          environment_key: default_env
