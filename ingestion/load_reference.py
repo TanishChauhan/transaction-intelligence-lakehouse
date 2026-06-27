@@ -11,6 +11,16 @@ Run on Databricks with ``TIL_TARGET=databricks``:
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+# Ensure the repo root (parent of the `generator`/`ingestion` packages) is importable
+# when this file is run as a bare script (e.g. a Databricks spark_python_task), not just
+# via `python -m`. Idempotent and harmless locally.
+_REPO_ROOT = str(Path(__file__).resolve().parents[1])  # repo root for `generator.*` imports
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
+
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 

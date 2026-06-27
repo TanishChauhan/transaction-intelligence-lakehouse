@@ -170,8 +170,12 @@ class AppConfig:
 def load_config() -> AppConfig:
     """Build the full config from environment variables (with sensible defaults)."""
 
+    # Auto-detect the runtime: Databricks compute (incl. serverless) always sets
+    # DATABRICKS_RUNTIME_VERSION, so default to "databricks" there and "local" otherwise.
+    # An explicit TIL_TARGET still overrides this auto-detected default.
+    default_target = "databricks" if os.environ.get("DATABRICKS_RUNTIME_VERSION") else "local"
     paths = PathConfig(
-        target=_env("TIL_TARGET", "local"),
+        target=_env("TIL_TARGET", default_target),
         catalog=_env("TIL_CATALOG", "txn_intelligence"),
         bronze_schema=_env("TIL_BRONZE_SCHEMA", "bronze"),
         landing_volume=_env("TIL_LANDING_VOLUME", "landing"),
