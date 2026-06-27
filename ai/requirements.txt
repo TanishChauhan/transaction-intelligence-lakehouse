@@ -1,0 +1,15 @@
+# OPTIONAL AI extras for the natural-language -> SQL showcase agent.
+#
+# These dependencies are intentionally SEPARATE from the core project's
+# pyproject.toml. The core dbt pipeline and CI do NOT install or use them.
+# Install only if you want to run the optional agent:
+#
+#     pip install -r ai/requirements.txt
+#
+# Versions are pinned to recent, compatible minimums (">=") to keep the showcase
+# reproducible without freezing the whole resolver.
+
+langgraph>=0.2.0,<0.3
+langchain>=0.3.0,<0.4
+langchain-openai>=0.2.0,<0.3
+databricks-sql-connector>=3.0.0,<4

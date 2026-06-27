@@ -140,15 +140,18 @@ if (-not $SkipPytest -and $Phase -ge 1 -and (Test-Path $VenvPython)) {
 # --- dbt offline validation (Phase 4+) ---
 $dbtProjectYml = Join-Path $DbtProjectDir "dbt_project.yml"
 if ($Phase -ge 4 -and (Test-Path $dbtProjectYml) -and (Test-Path $VenvDbt)) {
+    # Keep dbt fully offline/deterministic: skip the PyPI version-check network call
+    # (which can hang on restricted networks) and disable anonymous usage tracking.
+    $env:DO_NOT_TRACK = "1"
     Push-Location $DbtProjectDir
     try {
         if (-not $SkipDeps) {
             Write-Host "`n--- dbt deps ---" -ForegroundColor Cyan
-            & $VenvDbt deps --profiles-dir "." 2>&1 | ForEach-Object { Write-Host $_ }
+            & $VenvDbt deps --no-version-check --profiles-dir "." 2>&1 | ForEach-Object { Write-Host $_ }
             if ($LASTEXITCODE -ne 0) { Fail "dbt deps failed" } else { Pass "dbt deps OK" }
         }
         Write-Host "`n--- dbt parse ---" -ForegroundColor Cyan
-        & $VenvDbt parse --profiles-dir "." 2>&1 | ForEach-Object { Write-Host $_ }
+        & $VenvDbt parse --no-version-check --profiles-dir "." 2>&1 | ForEach-Object { Write-Host $_ }
         if ($LASTEXITCODE -ne 0) { Fail "dbt parse failed" } else { Pass "dbt parse OK" }
         Warn "dbt compile/build skipped offline (require a live SQL warehouse connection)"
     } finally { Pop-Location }
