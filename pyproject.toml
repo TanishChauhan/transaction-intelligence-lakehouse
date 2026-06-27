@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "transaction-intelligence-lakehouse"
+version = "0.1.0"
+description = "Near-real-time transaction intelligence medallion lakehouse on Databricks Free Edition (synthetic source -> Auto Loader bronze -> dbt silver/gold -> rule-based fraud signals)."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Data Engineering Portfolio" }]
+keywords = ["databricks", "delta", "medallion", "dbt", "fraud", "lakehouse", "pyspark"]
+
+# Runtime dependencies for local development and the synthetic generator.
+# pyspark/delta run on Databricks serverless; pinned here so unit tests and
+# local dry-runs work without a cluster.
+dependencies = [
+    "faker>=24,<26",
+]
+
+[project.optional-dependencies]
+# Spark is only needed to exercise ingestion logic locally; on Databricks it is
+# provided by the runtime. Kept optional to keep the base install light.
+spark = [
+    "pyspark>=3.5,<3.6",
+]
+dbt = [
+    "dbt-databricks>=1.7,<2.0",
+]
+dev = [
+    "pytest>=8,<9",
+    "black>=24,<25",
+]
+
+[tool.setuptools]
+packages = ["generator", "ingestion"]
+
+[tool.black]
+line-length = 100
+target-version = ["py310", "py311"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-q"

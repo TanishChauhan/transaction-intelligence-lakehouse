@@ -1,0 +1,59 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# --- Virtual environments ---
+.venv/
+venv/
+env/
+.python-version
+
+# --- Local landing zone / generated data (Free Edition uses UC Volumes instead) ---
+_landing/
+_checkpoints/
+*.log
+
+# --- dbt ---
+dbt/target/
+dbt/dbt_packages/
+dbt/logs/
+# Never commit profiles with real connection details / tokens
+dbt/profiles.yml
+profiles.yml
+
+# --- Terraform (never commit state or local provider cache) ---
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+crash.log
+crash.*.log
+.terraform.lock.hcl
+
+# --- Databricks Asset Bundles ---
+.databricks/
+bundle.tf.json
+
+# --- Secrets / credentials (defense in depth) ---
+.env
+.env.*
+!.env.example
+*.token
+secrets.yml
+*-secret.yml
+
+# --- IDE / OS ---
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
