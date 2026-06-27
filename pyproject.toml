@@ -44,3 +44,5 @@ target-version = ["py310", "py311"]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 addopts = "-q"
+# Make the in-repo packages importable without requiring an editable install.
+pythonpath = ["."]
