@@ -1,15 +1,17 @@
-# Agent Tester — dbt project verification harness
-# Runs structural checks + offline dbt validation (no warehouse required for parse/compile)
+# Agent Tester - BUILD_SPEC.md verification harness
+# Runs phase-aware structural checks + offline dbt/pytest validation
 
 param(
-    [switch]$Strict,
-    [switch]$SkipDeps
+    [int]$Phase = 0,
+    [switch]$SkipDeps,
+    [switch]$SkipPytest
 )
 
 $ErrorActionPreference = "Stop"
 $ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
-
+$VenvPython = Join-Path $ProjectRoot ".venv\Scripts\python.exe"
 $VenvDbt = Join-Path $ProjectRoot ".venv\Scripts\dbt.exe"
+$DbtProjectDir = Join-Path $ProjectRoot "dbt"
 $Failures = @()
 $Warnings = @()
 
@@ -17,105 +19,155 @@ function Fail($msg) { $script:Failures += $msg; Write-Host "[FAIL] $msg" -Foregr
 function Warn($msg) { $script:Warnings += $msg; Write-Host "[WARN] $msg" -ForegroundColor Yellow }
 function Pass($msg) { Write-Host "[PASS] $msg" -ForegroundColor Green }
 
-Write-Host "`n=== Agent Tester: dbt Project Verification ===" -ForegroundColor Cyan
-Write-Host "Project root: $ProjectRoot`n"
-
-# --- Structural checks (Supervisor acceptance criteria) ---
-$RequiredFiles = @(
-    "dbt_project.yml",
-    "packages.yml",
-    ".gitignore"
-)
-
-$ExpectedDirs = @(
-    "models/staging",
-    "models/intermediate",
-    "models/marts",
-    "seeds",
-    "macros",
-    "tests"
-)
-
-$ExpectedSeeds = @(
-    "raw_customers.csv",
-    "raw_products.csv",
-    "raw_orders.csv",
-    "raw_payments.csv"
-)
-
-foreach ($file in $RequiredFiles) {
-    $path = Join-Path $ProjectRoot $file
-    if (Test-Path $path) { Pass "Required file exists: $file" }
-    else { Fail "Missing required file: $file" }
-}
-
-foreach ($dir in $ExpectedDirs) {
-    $path = Join-Path $ProjectRoot $dir
-    if (Test-Path $path) { Pass "Directory exists: $dir" }
-    else { if ($Strict) { Fail "Missing directory: $dir" } else { Warn "Missing directory: $dir" } }
-}
-
-foreach ($seed in $ExpectedSeeds) {
-    $path = Join-Path $ProjectRoot "seeds\$seed"
-    if (Test-Path $path) { Pass "Seed exists: $seed" }
-    else { if ($Strict) { Fail "Missing seed: $seed" } else { Warn "Missing seed: $seed" } }
-}
-
-# Staging / intermediate / marts SQL models
-$ModelDirs = @("models/staging", "models/intermediate", "models/marts")
-foreach ($dir in $ModelDirs) {
-    $path = Join-Path $ProjectRoot $dir
-    if (Test-Path $path) {
-        $sqlCount = (Get-ChildItem -Path $path -Filter "*.sql" -Recurse -ErrorAction SilentlyContinue).Count
-        if ($sqlCount -gt 0) { Pass "$dir has $sqlCount SQL model(s)" }
-        else { Warn "$dir has no SQL models yet" }
+function Require-Path($relPath, [switch]$IsDir) {
+    $path = Join-Path $ProjectRoot $relPath
+    if ($IsDir) {
+        if (Test-Path $path) { Pass "Directory: $relPath" } else { Fail "Missing directory: $relPath" }
+    } else {
+        if (Test-Path $path) { Pass "File: $relPath" } else { Fail "Missing file: $relPath" }
     }
 }
 
-# Schema YAML with tests
-$schemaYmls = Get-ChildItem -Path (Join-Path $ProjectRoot "models") -Filter "*.yml" -Recurse -ErrorAction SilentlyContinue
-if ($schemaYmls.Count -gt 0) { Pass "Found $($schemaYmls.Count) schema YAML file(s)" }
-else { Warn "No schema YAML files found (tests/docs may be missing)" }
+Write-Host "`n=== Agent Tester: BUILD_SPEC Verification (Phase <= $Phase) ===" -ForegroundColor Cyan
+Write-Host "Project root: $ProjectRoot`n"
 
-# --- Toolchain checks ---
-if (-not (Test-Path $VenvDbt)) {
-    Fail "dbt not found in .venv — run: python -m venv .venv && .venv\Scripts\pip install dbt-databricks"
-} else {
-  Pass "dbt CLI available in .venv"
-  $dbtVersion = & $VenvDbt --version 2>&1 | Out-String
-  Write-Host "       $($dbtVersion.Trim())" -ForegroundColor DarkGray
+# --- Phase 0: Scaffold ---
+Write-Host "--- Phase 0: Scaffold ---" -ForegroundColor Cyan
+Require-Path "BUILD_SPEC.md"
+Require-Path "README.md"
+Require-Path "pyproject.toml"
+Require-Path "docs/architecture.md"
+Require-Path ".gitignore"
+Require-Path "generator" -IsDir
+Require-Path "ingestion" -IsDir
+Require-Path "dbt" -IsDir
+Require-Path "infra/terraform" -IsDir
+Require-Path "tests" -IsDir
+Require-Path ".github/workflows" -IsDir
+
+if (Test-Path (Join-Path $ProjectRoot "README.md")) {
+    $readme = Get-Content (Join-Path $ProjectRoot "README.md") -Raw
+    if ($readme -match "Databricks Free Edition") { Pass "README mentions Databricks Free Edition" }
+    else { Warn "README missing Free Edition setup notes" }
 }
 
-# --- Offline dbt validation ---
-if ((Test-Path (Join-Path $ProjectRoot "dbt_project.yml")) -and (Test-Path $VenvDbt)) {
+# --- Phase 1: Synthetic source ---
+if ($Phase -ge 1) {
+    Write-Host "`n--- Phase 1: Synthetic source ---" -ForegroundColor Cyan
+    Require-Path "generator/config.py"
+    Require-Path "generator/reference_data.py"
+    Require-Path "generator/generate_transactions.py"
+    Require-Path "tests/test_generator.py"
+}
+
+# --- Phase 2: Terraform ---
+if ($Phase -ge 2) {
+    Write-Host "`n--- Phase 2: Terraform ---" -ForegroundColor Cyan
+    $tfFiles = Get-ChildItem (Join-Path $ProjectRoot "infra/terraform") -Filter "*.tf" -ErrorAction SilentlyContinue
+    if ($tfFiles.Count -gt 0) { Pass "Terraform files present ($($tfFiles.Count))" }
+    else { Fail "No .tf files in infra/terraform" }
+}
+
+# --- Phase 3: Bronze ingestion ---
+if ($Phase -ge 3) {
+    Write-Host "`n--- Phase 3: Bronze ingestion ---" -ForegroundColor Cyan
+    Require-Path "ingestion/bronze_autoloader.py"
+}
+
+# --- Phase 4: dbt silver ---
+if ($Phase -ge 4) {
+    Write-Host "`n--- Phase 4: dbt silver ---" -ForegroundColor Cyan
+    Require-Path "dbt/dbt_project.yml"
+    Require-Path "dbt/profiles.yml.example"
+    Require-Path "dbt/models/silver" -IsDir
+    $silverSql = Get-ChildItem (Join-Path $ProjectRoot "dbt/models/silver") -Filter "*.sql" -Recurse -ErrorAction SilentlyContinue
+    if ($silverSql.Count -ge 2) { Pass "Silver models: $($silverSql.Count) SQL file(s)" }
+    else { Fail "Expected at least 2 silver SQL models (stg_transactions, silver_transactions)" }
+    $silverYml = Get-ChildItem (Join-Path $ProjectRoot "dbt/models/silver") -Filter "*_silver.yml" -ErrorAction SilentlyContinue
+    if ($silverYml) { Pass "Silver schema YAML present" } else { Fail "Missing _silver.yml with tests" }
+}
+
+# --- Phase 5: dbt gold ---
+if ($Phase -ge 5) {
+    Write-Host "`n--- Phase 5: dbt gold ---" -ForegroundColor Cyan
+    Require-Path "dbt/models/gold" -IsDir
+    $goldModels = @("dim_customer", "dim_merchant", "fct_transaction", "fraud_signals", "customer_spend_daily", "merchant_risk_daily")
+    foreach ($m in $goldModels) {
+        $found = Get-ChildItem (Join-Path $ProjectRoot "dbt/models/gold") -Filter "$m.sql" -Recurse -ErrorAction SilentlyContinue
+        if ($found) { Pass "Gold model: $m.sql" } else { Fail "Missing gold model: $m.sql" }
+    }
+    $goldYml = Get-ChildItem (Join-Path $ProjectRoot "dbt/models/gold") -Filter "*_gold.yml" -ErrorAction SilentlyContinue
+    if ($goldYml) { Pass "Gold schema YAML with exposures present" } else { Fail "Missing _gold.yml" }
+}
+
+# --- Phase 6: DAB orchestration ---
+if ($Phase -ge 6) {
+    Write-Host "`n--- Phase 6: DAB orchestration ---" -ForegroundColor Cyan
+    Require-Path "databricks.yml"
+    Require-Path "resources" -IsDir
+}
+
+# --- Phase 7: CI/CD ---
+if ($Phase -ge 7) {
+    Write-Host "`n--- Phase 7: CI/CD ---" -ForegroundColor Cyan
+    $workflows = Get-ChildItem (Join-Path $ProjectRoot ".github/workflows") -Filter "*.yml" -ErrorAction SilentlyContinue
+    if ($workflows.Count -gt 0) { Pass "GitHub Actions workflow(s): $($workflows.Count)" }
+    else { Fail "No GitHub Actions workflows" }
+}
+
+# --- Toolchain ---
+Write-Host "`n--- Toolchain ---" -ForegroundColor Cyan
+if (Test-Path $VenvPython) { Pass "Python venv present" } else { Warn "No .venv - create with: python -m venv .venv" }
+if (Test-Path $VenvDbt) {
+    Pass "dbt CLI in venv"
+    $dbtVer = & $VenvDbt --version 2>&1 | Out-String
+    Write-Host "       $($dbtVer.Trim())" -ForegroundColor DarkGray
+} else {
+    Warn "dbt not installed in venv"
+}
+
+# --- pytest (Phase 1+) ---
+if (-not $SkipPytest -and $Phase -ge 1 -and (Test-Path $VenvPython)) {
+    Write-Host "`n--- pytest ---" -ForegroundColor Cyan
     Push-Location $ProjectRoot
+    try {
+        & $VenvPython -m pytest 2>&1 | ForEach-Object { Write-Host $_ }
+        if ($LASTEXITCODE -ne 0) { Fail "pytest failed (exit $LASTEXITCODE)" }
+        else { Pass "pytest passed" }
+    } finally { Pop-Location }
+}
+
+# --- dbt offline validation (Phase 4+) ---
+$dbtProjectYml = Join-Path $DbtProjectDir "dbt_project.yml"
+if ($Phase -ge 4 -and (Test-Path $dbtProjectYml) -and (Test-Path $VenvDbt)) {
+    Push-Location $DbtProjectDir
     try {
         if (-not $SkipDeps) {
             Write-Host "`n--- dbt deps ---" -ForegroundColor Cyan
             & $VenvDbt deps 2>&1 | ForEach-Object { Write-Host $_ }
-            if ($LASTEXITCODE -ne 0) { Fail "dbt deps failed (exit $LASTEXITCODE)" }
-            else { Pass "dbt deps succeeded" }
+            if ($LASTEXITCODE -ne 0) { Fail "dbt deps failed" } else { Pass "dbt deps OK" }
         }
-
         Write-Host "`n--- dbt parse ---" -ForegroundColor Cyan
         & $VenvDbt parse 2>&1 | ForEach-Object { Write-Host $_ }
-        if ($LASTEXITCODE -ne 0) { Fail "dbt parse failed (exit $LASTEXITCODE)" }
-        else { Pass "dbt parse succeeded" }
-
+        if ($LASTEXITCODE -ne 0) { Fail "dbt parse failed" } else { Pass "dbt parse OK" }
         Write-Host "`n--- dbt compile ---" -ForegroundColor Cyan
         & $VenvDbt compile 2>&1 | ForEach-Object { Write-Host $_ }
-        if ($LASTEXITCODE -ne 0) { Fail "dbt compile failed (exit $LASTEXITCODE)" }
-        else { Pass "dbt compile succeeded" }
-    }
-    finally {
-        Pop-Location
-    }
-} else {
-    Warn "Skipping dbt deps/parse/compile (project or toolchain not ready)"
+        if ($LASTEXITCODE -ne 0) { Fail "dbt compile failed" } else { Pass "dbt compile OK" }
+    } finally { Pop-Location }
+}
+
+# --- Security: no secrets committed ---
+Write-Host "`n--- Security scan ---" -ForegroundColor Cyan
+$secretPatterns = @("profiles.yml", ".tfstate", ".env")
+foreach ($pat in $secretPatterns) {
+    $hits = Get-ChildItem $ProjectRoot -Recurse -Filter $pat -ErrorAction SilentlyContinue |
+        Where-Object { $_.FullName -notmatch '\\\.venv\\' -and $_.FullName -notmatch '\\\.git\\' }
+    if ($hits) { Fail "Potentially sensitive file committed: $pat" }
+    else { Pass "No committed $pat" }
 }
 
 # --- Summary ---
-Write-Host "`n=== Summary ===" -ForegroundColor Cyan
+Write-Host "`n=== Summary (Phase $Phase) ===" -ForegroundColor Cyan
 Write-Host "Failures: $($Failures.Count)  |  Warnings: $($Warnings.Count)"
 
 if ($Failures.Count -gt 0) {
