@@ -1,6 +1,6 @@
 output "catalog_name" {
   description = "Provisioned Unity Catalog catalog."
-  value       = databricks_catalog.this.name
+  value       = local.catalog_name
 }
 
 output "schemas" {

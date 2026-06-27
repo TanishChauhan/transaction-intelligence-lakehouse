@@ -9,6 +9,12 @@ variable "catalog_name" {
   default     = "txn_intelligence"
 }
 
+variable "create_catalog" {
+  description = "Whether Terraform creates the catalog. Set to false on Databricks Free Edition (Default Storage), where catalogs must be created via the UI; Terraform then manages only the schemas, volumes, and grants inside the existing catalog."
+  type        = bool
+  default     = true
+}
+
 variable "bronze_schema" {
   description = "Bronze (raw ingestion) schema name."
   type        = string
