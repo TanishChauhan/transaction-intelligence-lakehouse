@@ -1,0 +1,13 @@
+# Copy to terraform.tfvars (gitignored) and fill in. NEVER commit real values.
+# The auth token is NOT set here - export it as an environment variable instead:
+#   export DATABRICKS_TOKEN="dapi..."      # (PowerShell: $env:DATABRICKS_TOKEN="dapi...")
+
+databricks_host = "https://dbc-XXXXXXXX-XXXX.cloud.databricks.com"
+
+# Optional overrides (defaults shown):
+# catalog_name      = "txn_intelligence"
+# grant_principal   = "account users"
+
+# To expose the existing Free Edition serverless warehouse JDBC path for dbt,
+# set its id (found in the workspace SQL Warehouses UI). Leave empty to skip.
+# sql_warehouse_id  = "abcd1234efgh5678"
