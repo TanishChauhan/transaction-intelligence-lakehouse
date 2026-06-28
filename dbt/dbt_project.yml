@@ -18,7 +18,7 @@ clean-targets:
 
 # Catalog is shared by sources (bronze) and is overridable via env.
 vars:
-  catalog: "{{ env_var('TIL_CATALOG', 'txn_intelligence') }}"
+  catalog: "txn_intelligence"
 
 models:
   transaction_intelligence:

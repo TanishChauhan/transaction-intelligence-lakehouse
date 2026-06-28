@@ -3,7 +3,7 @@ version: 2
 sources:
   - name: bronze
     description: "Raw ingested data (Auto Loader + reference loader) in the bronze schema."
-    database: "{{ var('catalog') }}"
+    database: "{{ env_var('TIL_CATALOG', 'txn_intelligence') }}"
     schema: bronze
     tables:
       - name: transactions_raw

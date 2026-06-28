@@ -69,7 +69,7 @@ resources:
             project_directory: ../dbt
             commands:
               - dbt deps
-              - dbt build --target dev
+              - dbt build
             warehouse_id: ${var.warehouse_id}
           environment_key: default_env
 
