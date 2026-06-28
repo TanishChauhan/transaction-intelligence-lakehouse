@@ -15,9 +15,14 @@ import sys
 from pathlib import Path
 
 # Ensure the repo root (parent of the `generator`/`ingestion` packages) is importable
-# when this file is run as a bare script (e.g. a Databricks spark_python_task), not just
-# via `python -m`. Idempotent and harmless locally.
-_REPO_ROOT = str(Path(__file__).resolve().parents[1])  # repo root for `generator.*` imports
+# when this file is run as a bare script, not just via `python -m`. A Databricks
+# spark_python_task execs the file WITHOUT defining `__file__`, so fall back to the
+# current code object's filename, which is always set. Idempotent and harmless locally.
+try:
+    _self_path = Path(__file__)
+except NameError:  # e.g. Databricks spark_python_task exec context
+    _self_path = Path(sys._getframe().f_code.co_filename)
+_REPO_ROOT = str(_self_path.resolve().parents[1])  # repo root for `generator.*`/`ingestion.*` imports
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
