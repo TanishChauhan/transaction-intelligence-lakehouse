@@ -71,6 +71,8 @@ resources:
               - dbt deps
               - dbt build
             warehouse_id: ${var.warehouse_id}
+            catalog: txn_intelligence
+            schema: silver
           environment_key: default_env
 
         # 5. Final data-quality gate: re-run the critical quality tests as a hard gate.
@@ -82,4 +84,6 @@ resources:
             commands:
               - dbt test --select assert_fraud_recall_sane source:* silver_transactions fraud_signals
             warehouse_id: ${var.warehouse_id}
+            catalog: txn_intelligence
+            schema: silver
           environment_key: default_env
